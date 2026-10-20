@@ -1,6 +1,6 @@
 # PCL-Re.Download_PATCH
 
-恢复官方 PCL 2.99.0.0 的 MC 下载功能。
+恢复官方 PCL 2.99.0.0 的 MC 下载功能。支持正式版和快照版。
 
 ## 使用
 
@@ -8,7 +8,7 @@
 2. 关闭 PCL，把原版 EXE 拖到 `Apply-Patch.bat` 上。
 3. 提示完成后，启动该 EXE。
 
-没有原版时，双击 `Apply-Patch.bat`，自动下载并生成修补版。
+没有原版时，双击 `Apply-Patch.bat`，自动下载（正式版）并生成修补版。
 恢复时，把同一个 EXE 拖到 `Restore-Original.bat` 上，保留 `.pcl-original.bak` 备份。
 
 采用 [PolyForm Noncommercial 1.0.0](LICENSE)。禁止倒卖及其他商业用途，二次分发须保留 [NOTICE](NOTICE) 中的作者署名和方案来源。
