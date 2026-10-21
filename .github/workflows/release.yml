@@ -1,0 +1,94 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Fetch regression samples
+        run: ./source/GetTestSamples.ps1 -WorkDirectory "$env:RUNNER_TEMP/samples"
+      - name: Build PCL method data
+        run: |
+          $samples = Get-Content "$env:RUNNER_TEMP/samples/samples.json" -Raw | ConvertFrom-Json
+          ./source/BuildMethods.ps1 -DonorExe $samples.Donor -RestrictedExe $samples.PCL
+          if ($LASTEXITCODE) {exit $LASTEXITCODE}
+          git diff --exit-code -- lib/PCL.Methods.gz lib/PCL.Methods.json
+          if ($LASTEXITCODE) {exit $LASTEXITCODE}
+      - name: Test patch and restore
+        run: |
+          $samples = Get-Content "$env:RUNNER_TEMP/samples/samples.json" -Raw | ConvertFrom-Json
+          ./source/MakeTestVariants.ps1 -Pcl $samples.PCL -OutputDirectory "$env:RUNNER_TEMP/samples"
+          python source/TestPatch.py --pcl $samples.PCL --ce $samples.CE --hmcl $samples.HMCL --unrestricted-hmcl $samples.OldHMCL --pcl-version "$env:RUNNER_TEMP/samples/PCL-version.exe" --mismatched-pcl "$env:RUNNER_TEMP/samples/PCL-mismatch.exe" --work-dir "$env:RUNNER_TEMP/samples"
+          if ($LASTEXITCODE) {exit $LASTEXITCODE}
+      - name: Verify restored PCL methods with CLR
+        run: |
+          $samples = Get-Content "$env:RUNNER_TEMP/samples/samples.json" -Raw | ConvertFrom-Json
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./LauncherPatch.ps1 -TargetPath $samples.PCL -OutputPath "$env:RUNNER_TEMP/samples/PATCH_PCL.exe"
+          if ($LASTEXITCODE) {exit $LASTEXITCODE}
+          ./source/VerifyPcl.ps1 -Original $samples.PCL -Patched "$env:RUNNER_TEMP/samples/PATCH_PCL.exe" -WorkDirectory "$env:RUNNER_TEMP/samples"
+      - name: Package
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          $version = if ($env:REF_TYPE -eq 'tag') {$env:REF_NAME} else {'dev'}
+          ./source/BuildRelease.ps1 -Version $version
+      - name: Test extracted package
+        run: |
+          $archive = Get-ChildItem dist/*.zip | Select-Object -First 1
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath "$env:RUNNER_TEMP/package"
+          $samples = Get-Content "$env:RUNNER_TEMP/samples/samples.json" -Raw | ConvertFrom-Json
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP/package/LauncherPatch.ps1" -TargetPath $samples.PCL -CheckOnly
+          if ($LASTEXITCODE) {exit $LASTEXITCODE}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: launcher-patch
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Publish verified package
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" --name launcher-patch --dir dist
+          printf '%s\n' '支持 PCL、PCL-CE、HMCL。按方法和限制特征识别，不按版本号筛选。' '' '完整解压 ZIP，把启动器拖到「启动器下载恢复补丁.bat」上。' > notes.md
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "启动器下载恢复补丁 $GITHUB_REF_NAME" --notes-file notes.md dist/*.zip dist/*.sha256
+          fi
