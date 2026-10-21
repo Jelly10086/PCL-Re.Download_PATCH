@@ -26,6 +26,11 @@ SHA256 6b6e1260cb5a1d6a303855f1c60cab3d0bc1aebba7e40a964180188b271e7386
 https://github.com/Meloong-Git/PCL/tree/5ef81e4
 SHA256 5582952ded3b443503f66c23b810802bd20f1a3e847b54d9e09653a825859a36
 
+快照版目标原版：用户本机由 PCL 自身更新得到的快照版 EXE（仓库不提供，仅拖入版本为快照版时进入该分支）
+SHA256 5b64d6d540c376390470cea3ab99d47661e8bca81be2ba647ea83e7d2e9428fa（5985280 字节）
+回填后 SHA256 144c5cb53b657bb2e7a3768bdd8c25d521b2b1733b6c2ecbde190b7d0317bb96（5980160 字节）
+快照版与正式版只是目标 EXE 不同，供体与回填的方法集合完全一致
+
 将原版 EXE 的 PCL.Resources.resources 中的内嵌托管 DLL 提取到 release/
 包括 PCLCS、MeloongCore、MeloongCore.Wpf、Newtonsoft.Json 等
 使用 .NET ResourceReader 时资源值已经是 DLL 原始字节
