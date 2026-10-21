@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 setlocal DisableDelayedExpansion
-title 启动器下载恢复补丁
+title Launcher-Re.Download_PATCH
 if "%~1"=="" (
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0LauncherPatch.ps1"
 ) else (

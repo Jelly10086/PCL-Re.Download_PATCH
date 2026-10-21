@@ -85,7 +85,7 @@ function Load-Engine {
 $lock = $null
 try {
     if ($PSVersionTable.PSEdition -eq 'Core') {throw '请使用 Windows PowerShell 5.1 或 BAT 入口运行'}
-    Write-Host '启动器下载恢复补丁'
+    Write-Host 'Launcher-Re.Download_PATCH'
     Write-Host '支持的启动器：PCL / PCL-CE / HMCL'
     Write-Host ''
     if ($ListLaunchers) {exit 0}

@@ -9,7 +9,7 @@
 ## 使用
 
 1. 下载 [Releases](https://github.com/Jelly10086/PCL-Re.Download_PATCH/releases/latest) 中的 ZIP，完整解压。
-2. 关闭启动器，把 EXE 或 JAR 拖到 `启动器下载恢复补丁.bat` 上。也可双击后选择文件。
+2. 关闭启动器，把 EXE 或 JAR 拖到 `Launcher-Re.Download_PATCH.bat` 上。也可双击后选择文件。
 3. 提示修补完成后，照常启动原文件。
 
 恢复时，把同一文件拖到 `Restore-Original.bat` 上。保留旁边的 `.download-original.bak` 和 `.download-patch.json`。
