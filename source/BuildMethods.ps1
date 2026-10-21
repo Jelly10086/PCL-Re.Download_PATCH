@@ -30,14 +30,11 @@ try {
         }
     }
     $selected = @($rules | ForEach-Object {$_.Method})
+    $required = [Collections.Generic.HashSet[string]]::new([string[]][RestoreDownload]::RequiredMethods($donor.MainModule, [string[]]$selected))
     $donor.MainModule.Resources.Clear()
     foreach ($type in (Get-AllTypes $donor.MainModule.Types)) {
-        $keepGenerated = $false
-        foreach ($parent in $jobs.Keys) {
-            if ($type.FullName.StartsWith($parent + '/_Closure$')) {$keepGenerated = $true}
-        }
         foreach ($m in $type.Methods) {
-            if (!$m.HasBody -or $m.FullName -in $selected -or $keepGenerated) {continue}
+            if (!$m.HasBody -or $required.Contains($m.FullName)) {continue}
             $m.Body = [Mono.Cecil.Cil.MethodBody]::new($m)
             $m.Body.Instructions.Add([Mono.Cecil.Cil.Instruction]::Create([Mono.Cecil.Cil.OpCodes]::Ldnull))
             $m.Body.Instructions.Add([Mono.Cecil.Cil.Instruction]::Create([Mono.Cecil.Cil.OpCodes]::Throw))

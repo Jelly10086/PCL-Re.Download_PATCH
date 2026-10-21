@@ -112,12 +112,38 @@ def compressed_bundle(source, destination):
     raise AssertionError("Main assembly not found")
 
 
+def upgrade(source, directory):
+    directory.mkdir()
+    target = directory / 'legacy launcher.exe'
+    for suffix in ('', '.download-original.bak', '.download-patch.json'):
+        shutil.copy2(Path(str(source) + suffix), Path(str(target) + suffix))
+    record = Path(str(target) + '.download-patch.json')
+    backup = Path(str(target) + '.download-original.bak')
+    before = digest(target)
+    original = digest(backup)
+    metadata = record.read_bytes()
+    run(target, '-CheckOnly')
+    assert digest(target) == before and record.read_bytes() == metadata
+    run(target)
+    repaired = digest(target)
+    assert repaired != before and digest(backup) == original
+    assert json.loads(record.read_text(encoding='utf-8-sig'))['OriginalHash'] == original
+    metadata = record.read_bytes()
+    run(target)
+    assert digest(target) == repaired and record.read_bytes() == metadata
+    run(target, '-Restore')
+    assert digest(target) == original
+    print('PASS legacy patch upgrade and original backup preserved', flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("pcl", "ce", "hmcl", "unrestricted-hmcl", "pcl-version", "mismatched-pcl"):
+    for name in ("pcl", "ce", "hmcl", "unrestricted-hmcl", "pcl-version", "mismatched-pcl", "legacy-pcl"):
         parser.add_argument("--" + name, type=Path, required=name in ("pcl", "ce", "hmcl"))
     parser.add_argument("--work-dir", type=Path, required=True)
     args = parser.parse_args()
+    if args.legacy_pcl:
+        upgrade(args.legacy_pcl, args.work_dir / ('upgrade-' + uuid.uuid4().hex))
     work = args.work_dir.resolve() / ("patch-tests-" + uuid.uuid4().hex[:8])
     work.mkdir()
     for name in ("pcl", "ce", "hmcl", "pcl_version"):

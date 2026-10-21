@@ -14,9 +14,15 @@ $expected = @((Get-Content -LiteralPath (Join-Path $root 'lib/PCL.Methods.json')
 $oldMethods = @{}
 foreach ($t in (Types $before.MainModule.Types)) {foreach ($m in $t.Methods) {$oldMethods[$m.FullName] = $m}}
 $changed = @()
+$generated = @()
 foreach ($t in (Types $after.MainModule.Types)) {
     foreach ($m in $t.Methods) {
         if ($oldMethods.ContainsKey($m.FullName) -and [LauncherPatchEngine]::Fingerprint($m) -ne [LauncherPatchEngine]::Fingerprint($oldMethods[$m.FullName])) {$changed += $m.FullName}
+        if (!$oldMethods.ContainsKey($m.FullName) -and $m.HasBody) {
+            $code = @($m.Body.Instructions | Where-Object {$_.OpCode -ne [Mono.Cecil.Cil.OpCodes]::Nop})
+            if ($code.Count -eq 2 -and $code[0].OpCode -eq [Mono.Cecil.Cil.OpCodes]::Ldnull -and $code[1].OpCode -eq [Mono.Cecil.Cil.OpCodes]::Throw) {throw "Stripped callback copied: $($m.FullName)"}
+            $generated += [pscustomobject]@{Type=$t.FullName.Replace('/', '+'); Method=$m.Name}
+        }
     }
 }
 if (@(Compare-Object ($expected | Sort-Object) ($changed | Sort-Object)).Count -ne 0) {throw 'Unexpected original method changes'}
@@ -62,7 +68,7 @@ try {
     $assembly = [Reflection.Assembly]::LoadFrom($testExe)
     $jobs = @{
         'PCL.ModModpack' = @('ModpackInstall')
-        'PCL.PageDownloadInstall' = @('LoaderInit','_Lambda$__R3-3')
+        'PCL.PageDownloadInstall' = @('LoaderInit')
         'PCL.PageDownloadModify' = @('LoadInstanceFinished')
         'PCL.PageDownloadResourceDetail' = @('InitializeStackResourceVersions')
     }
@@ -73,5 +79,14 @@ try {
             Write-Output "JIT OK - $method"
         }
     }
+    foreach ($entry in $generated) {
+        $type = $assembly.GetType($entry.Type,$true)
+        $flags = [Reflection.BindingFlags]'Public,NonPublic,Static,Instance,DeclaredOnly'
+        $members = if ($entry.Method -in @('.ctor', '.cctor')) {$type.GetConstructors($flags)} else {$type.GetMethods($flags)}
+        foreach ($method in $members | Where-Object {$_.Name -eq $entry.Method}) {
+            [Runtime.CompilerServices.RuntimeHelpers]::PrepareMethod($method.MethodHandle)
+        }
+    }
+    Write-Output "JIT OK - $($generated.Count) generated callbacks and constructors"
 } finally {[AppDomain]::CurrentDomain.remove_AssemblyResolve($resolve)}
 Write-Output 'PASS - method scope, resources and CLR JIT'

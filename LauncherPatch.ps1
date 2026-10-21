@@ -115,6 +115,7 @@ try {
     if ($OutputPath -ne $TargetPath) {Assert-Closed $OutputPath}
     [byte[]]$original = [IO.File]::ReadAllBytes($TargetPath)
     $originalHash = Bytes-Hash $original
+    $sourceHash = $originalHash
     $currentHash = $null
     if ([IO.File]::Exists($OutputPath)) {$currentHash = File-Hash $OutputPath}
     if ($Restore) {
@@ -131,17 +132,29 @@ try {
         Write-Host "已恢复原版：$OutputPath"
         exit 0
     }
-    if ($currentHash -and $currentHash -ne $originalHash) {throw '输出位置已有其他文件，未覆盖'}
+    $isUpgrade = $false
+    if ($OutputPath -eq $TargetPath -and [IO.File]::Exists($recordPath) -and [IO.File]::Exists($backupPath)) {
+        $previous = Get-Content -LiteralPath $recordPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($previous.Format -eq 1 -and $previous.Launcher -eq 'PCL' -and $previous.PatchedHash -eq $sourceHash) {
+            [byte[]]$saved = [IO.File]::ReadAllBytes($backupPath)
+            if ((Bytes-Hash $saved) -ne $previous.OriginalHash) {throw '原版备份校验失败'}
+            $original = $saved
+            $originalHash = $previous.OriginalHash
+            $isUpgrade = $true
+        }
+    }
+    if (!$isUpgrade -and $currentHash -and $currentHash -ne $originalHash) {throw '输出位置已有其他文件，未覆盖'}
     Load-Engine
     $result = [LauncherPatchEngine]::Patch($original, $script:donor, $script:methodNames, $script:methodHashes)
     Write-Host "启动器：$($result.Launcher)"
     if ($result.Status -eq 'AlreadyPatched') {Write-Host '限制入口已关闭，无需重复修补'; exit 0}
     if ($result.Status -eq 'NoRestriction') {Write-Host '未发现可修补的下载限制，未修改文件'; exit 0}
     if ($result.Status -ne 'Patched' -or $result.Changes.Length -lt 1) {throw '补丁未生成有效结果'}
+    $patchedHash = Bytes-Hash $result.Bytes
+    if ($currentHash -eq $patchedHash) {Write-Host '当前补丁已是最新，无需重复修补'; exit 0}
     foreach ($change in $result.Changes) {Write-Host "  $change"}
     if ($CheckOnly) {Write-Host '特征匹配及修补结果回读验证通过，未修改文件'; exit 0}
-    if ((File-Hash $TargetPath) -ne $originalHash) {throw '运行期间源文件发生变化，未应用补丁'}
-    $patchedHash = Bytes-Hash $result.Bytes
+    if ((File-Hash $TargetPath) -ne $sourceHash) {throw '运行期间源文件发生变化，未应用补丁'}
     $recordHash = $null
     if ([IO.File]::Exists($recordPath)) {
         $oldRecord = Get-Content -LiteralPath $recordPath -Raw -Encoding UTF8 | ConvertFrom-Json

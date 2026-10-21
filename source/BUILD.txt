@@ -16,7 +16,7 @@ https://api.nuget.org/v3-flatcontainer/mono.cecil/0.11.6/mono.cecil.0.11.6.nupkg
 参考实现：https://github.com/Meloong-Git/PCL/tree/5ef81e4
 限制样本：https://github.com/Meloong-Git/PCL/tree/6b9a50df911c9d68b69b24c979efba477fb14b67
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File source/BuildMethods.ps1 -DonorExe donor.exe -RestrictedExe restricted.exe
-生成器移除供体资源和无关方法体；运行时逐方法比对限制代码，检查依赖并回填，不加载执行供体。
+生成器移除供体资源和无关方法体，递归保留回填方法引用的回调、闭包及初始化方法。运行时为这些依赖创建独立名称，避免复用目标中同名但行为不同的编译器生成方法；依赖已被裁剪时拒绝回填。不加载执行供体。
 
 命令行
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File LauncherPatch.ps1 -TargetPath launcher.exe -CheckOnly
@@ -28,6 +28,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File LauncherPatch.ps1 -Targe
 python source/TestPatch.py --pcl restricted.exe --ce PCL-CE.exe --hmcl HMCL.exe --unrestricted-hmcl old-HMCL.exe --work-dir D:/Data/Game/RegionTest
 测试只复制指定样本，验证试运行、修补、幂等、原样恢复、损坏备份及外部修改保护，并验证 JAR 和压缩单文件容器。
 --pcl-version 可额外提供仅修改程序集版本的 PCL 样本，验证无版本白名单。
+source/TestRestore.ps1 验证回调实际执行、闭包初始化和同名冲突，并验证裁剪依赖被拒绝。
+source/MakeTestVariants.ps1 生成版本变化、方法结构变化和旧补丁空回调样本；--legacy-pcl 验证保留原版备份的升级修补。
 
 自动发布
 .github/workflows/release.yml：提交和 PR 自动验证，推送 v* 标签后发布经过验证的 ZIP 和 SHA256 文件。
