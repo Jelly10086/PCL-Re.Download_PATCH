@@ -1,22 +1,25 @@
-# PCL-Re.Download_PATCH
+# 启动器下载恢复补丁
 
-恢复官方 PCL 2.99.0.0 的 MC 下载功能。
+支持的启动器：
+
+- PCL（正式版、快照版）
+- PCL-CE
+- HMCL
 
 ## 使用
 
-1. 下载 [Releases](https://github.com/Jelly10086/PCL-Re.Download_PATCH/releases/latest) 中的 ZIP 并解压。
-2. 关闭 PCL，把原版 EXE 拖到 `Apply-Patch.bat` 上。
-3. 提示完成后，启动该 EXE。
+1. 下载 [Releases](https://github.com/Jelly10086/PCL-Re.Download_PATCH/releases/latest) 中的 ZIP，完整解压。
+2. 关闭启动器，把 EXE 或 JAR 拖到 `启动器下载恢复补丁.bat` 上。也可双击后选择文件。
+3. 提示修补完成后，照常启动原文件。
 
-没有原版时，双击 `Apply-Patch.bat`，自动下载并生成修补版。
-恢复时，把同一个 EXE 拖到 `Restore-Original.bat` 上，保留 `.pcl-original.bak` 备份。
-
-采用 [PolyForm Noncommercial 1.0.0](LICENSE)。禁止倒卖及其他商业用途，二次分发须保留 [NOTICE](NOTICE) 中的作者署名和方案来源。
+恢复时，把同一文件拖到 `Restore-Original.bat` 上。保留旁边的 `.download-original.bak` 和 `.download-patch.json`。
 
 ## 原理
 
-用限制提交前的官方实现恢复下载相关方法，保留其余功能和内嵌资源。修补前后均校验 SHA256，仅支持对应的官方 2.99.0.0。构建说明见 [source/BUILD.txt](source/BUILD.txt)。
+按方法签名和限制代码识别，不按版本号或整个文件的哈希筛选。PCL 回填被裁剪的下载方法，PCL-CE 和 HMCL 关闭对应的下载限制判断。无法匹配的方法不修改；这不代表所有历史及未来构建都能修补。修补过程不改系统地区、时区或代理。[构建与验证](source/BUILD.txt)。
+
+采用 [PolyForm Noncommercial 1.0.0](LICENSE)，禁止倒卖及其他商业用途，二次分发须保留 [NOTICE](NOTICE) 中的作者署名和方案来源。Mono.Cecil 使用其 [MIT 许可证](lib/Mono.Cecil.LICENSE.txt)，PCL 回填数据受[上游许可](UPSTREAM-LICENCE.txt)约束。
 
 ## 免责声明
 
-这是第三方补丁，与 PCL 官方无关。PCL 原作者为龙腾猫跃，相关内容仍受[上游许可](UPSTREAM-LICENCE.txt)约束。本补丁按现状提供，不保证兼容性或可用性；使用前请备份，风险由使用者承担。
+第三方补丁，与各启动器官方无关。按现状提供，不保证兼容性或可用性，使用前请备份。
