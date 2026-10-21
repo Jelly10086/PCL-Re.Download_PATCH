@@ -118,26 +118,20 @@ public sealed class RestoreDownload {
             HandlerStart=map[e.HandlerStart],HandlerEnd=e.HandlerEnd==null?null:map[e.HandlerEnd],FilterStart=e.FilterStart==null?null:map[e.FilterStart]
         });
     }
-    public static string Run(string donor,string original,string output) {
-        var resolver=new DefaultAssemblyResolver();
-        resolver.AddSearchDirectory(System.IO.Path.GetDirectoryName(original));
-        var parameters=new ReaderParameters {AssemblyResolver=resolver};
-        using(var a=AssemblyDefinition.ReadAssembly(donor,parameters))using(var b=AssemblyDefinition.ReadAssembly(original,parameters)) {
-            var p=new RestoreDownload(a.MainModule,b.MainModule);
-            var jobs=new Dictionary<string,string[]> {
-                {"PCL.ModModpack",new[]{"ModpackInstall"}},
-                {"PCL.PageDownloadInstall",new[]{"LoaderInit"}},
-                {"PCL.PageDownloadModify",new[]{"LoadInstanceFinished"}},
-                {"PCL.PageDownloadResourceDetail",new[]{"InitializeStackResourceVersions"}}
-            };
-            foreach(var job in jobs)foreach(var m in a.MainModule.GetType(job.Key).Methods.Where(x=>job.Value.Contains(x.Name))) {
-                MethodDefinition dest;
-                if(!p.methods.TryGetValue(m.FullName,out dest))throw new Exception("Missing destination: "+m.FullName);
-                p.Copy(m,dest);p.changed.Add("Restored "+m.FullName);
+    public static byte[] Run(byte[] donor,byte[] original,string[] selected) {
+        using(var resolver=new LauncherAssemblyResolver(original)) {
+            var parameters=new ReaderParameters {AssemblyResolver=resolver};
+            using(var a=AssemblyDefinition.ReadAssembly(new System.IO.MemoryStream(donor),parameters))using(var b=AssemblyDefinition.ReadAssembly(new System.IO.MemoryStream(original),parameters)) {
+                var p=new RestoreDownload(a.MainModule,b.MainModule);
+                foreach(var name in selected) {
+                    var m=All(a.MainModule.Types).SelectMany(x=>x.Methods).Single(x=>x.FullName==name);
+                    MethodDefinition dest;
+                    if(!p.methods.TryGetValue(m.FullName,out dest))throw new Exception("Missing destination: "+m.FullName);
+                    p.Copy(m,dest);p.changed.Add("Restored "+m.FullName);
+                }
+                if(b.MainModule.AssemblyReferences.Any(x=>x.Name==a.Name.Name))throw new Exception("Accidental self reference");
+                using(var output=new System.IO.MemoryStream()) {b.Write(output);return output.ToArray();}
             }
-            if(b.MainModule.AssemblyReferences.Any(x=>x.Name==a.Name.Name))throw new Exception("Accidental self reference");
-            b.Write(output);
-            return String.Join(Environment.NewLine,p.changed);
         }
     }
 }

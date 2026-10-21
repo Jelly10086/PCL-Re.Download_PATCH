@@ -1,46 +1,40 @@
-补丁构建说明
+运行环境
+Windows PowerShell 5.1、.NET Framework 4.8；使用根目录的 BAT 即可，不需要 Python 或 Java 编译器。
 
-构建工具：Windows PowerShell 5.1、.NET Framework 4.8、Mono.Cecil 0.11.6
-生成差分使用 Python 3 标准库；提取内嵌 DLL 时可以使用 dnfile 0.18.0
+目录
+LauncherPatch.ps1：识别、备份、写入与恢复
+source/LauncherPatch.cs：PCL-CE 的托管 PE/单文件容器处理、HMCL 的 ZIP/Java 类处理
+source/RestoreDownload.cs：官方 PCL 的方法回填
+lib/Mono.Cecil.dll：0.11.6，NuGet 包中的 lib/net40 版本
+lib/PCL.Methods.gz、PCL.Methods.json：PCL 方法数据及逐方法特征，不是版本白名单
 
-目录结构：补齐以下构建输入
-work/
-  source/BuildPatch.ps1
-  source/RestoreDownload.cs
-  source/VerifyPatch.ps1
-  source/MakeDelta.py
-  source/Mono.Cecil.dll
-  source/previous/Plain Craft Launcher 2.exe
-  source/release/Plain Craft Launcher 2.exe
-  source/release/*.dll
-
-Mono.Cecil 官方 NuGet 包
+Mono.Cecil 原包
 https://api.nuget.org/v3-flatcontainer/mono.cecil/0.11.6/mono.cecil.0.11.6.nupkg
-使用包中的 lib/net40/Mono.Cecil.dll
 
-目标原版：从下面提交的 最新正式版.zip 提取 EXE
-https://github.com/Meloong-Git/PCL/tree/6b9a50df911c9d68b69b24c979efba477fb14b67
-SHA256 6b6e1260cb5a1d6a303855f1c60cab3d0bc1aebba7e40a964180188b271e7386
+重新生成 PCL 方法数据
+从以下两个提交的 最新正式版.zip 提取 EXE，分别作为 donor.exe 和 restricted.exe。
+参考实现：https://github.com/Meloong-Git/PCL/tree/5ef81e4
+限制样本：https://github.com/Meloong-Git/PCL/tree/6b9a50df911c9d68b69b24c979efba477fb14b67
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File source/BuildMethods.ps1 -DonorExe donor.exe -RestrictedExe restricted.exe
+生成器移除供体资源和无关方法体；运行时逐方法比对限制代码，检查依赖并回填，不加载执行供体。
 
-参考实现：从限制提交 e4b0489 的父提交 5ef81e4 中提取 最新正式版.zip 的 EXE
-https://github.com/Meloong-Git/PCL/tree/5ef81e4
-SHA256 5582952ded3b443503f66c23b810802bd20f1a3e847b54d9e09653a825859a36
+命令行
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File LauncherPatch.ps1 -TargetPath launcher.exe -CheckOnly
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File LauncherPatch.ps1 -TargetPath launcher.exe
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File LauncherPatch.ps1 -TargetPath launcher.exe -Restore
+可使用 -OutputPath 输出到新的文件，输出位置已有不同文件时拒绝覆盖。
 
-快照版目标原版：用户本机由 PCL 自身更新得到的快照版 EXE（仓库不提供，仅拖入版本为快照版时进入该分支）
-SHA256 5b64d6d540c376390470cea3ab99d47661e8bca81be2ba647ea83e7d2e9428fa（5985280 字节）
-回填后 SHA256 144c5cb53b657bb2e7a3768bdd8c25d521b2b1733b6c2ecbde190b7d0317bb96（5980160 字节）
-快照版与正式版只是目标 EXE 不同，供体与回填的方法集合完全一致
+集成测试（仅开发时需要 Python 3）
+python source/TestPatch.py --pcl restricted.exe --ce PCL-CE.exe --hmcl HMCL.exe --unrestricted-hmcl old-HMCL.exe --work-dir D:/Data/Game/RegionTest
+测试只复制指定样本，验证试运行、修补、幂等、原样恢复、损坏备份及外部修改保护，并验证 JAR 和压缩单文件容器。
+--pcl-version 可额外提供仅修改程序集版本的 PCL 样本，验证无版本白名单。
 
-将原版 EXE 的 PCL.Resources.resources 中的内嵌托管 DLL 提取到 release/
-包括 PCLCS、MeloongCore、MeloongCore.Wpf、Newtonsoft.Json 等
-使用 .NET ResourceReader 时资源值已经是 DLL 原始字节
-使用 dnfile.resource.ResourceSet 的条目原始 data 时，先跳过四字节长度字段
+自动发布
+.github/workflows/release.yml：提交和 PR 自动验证，推送 v* 标签后发布经过验证的 ZIP 和 SHA256 文件。
+本地打包：powershell.exe -NoProfile -ExecutionPolicy Bypass -File source/BuildRelease.ps1
 
-在 work/ 执行
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File source/BuildPatch.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File source/VerifyPatch.ps1
-python source/MakeDelta.py
-
-输出根目录的 PCL-Download-Restored.exe 和 download.patch.gz
-差分重新生成后，应核对其 SHA256 是否仍与 Patch-PCL.ps1 中的 deltaHash 一致
-VerifyPatch.ps1 会核对仅五个原方法发生 IL 变化，资源不变，并对相关方法执行 JIT 校验
+边界
+官方 PCL 被编译掉的方法需要匹配现有方法特征；识别到限制但结构变化时拒绝回填。
+PCL-CE 支持托管 PE 和 .NET 单文件容器；修改 IL 后禁用旧 ReadyToRun 映像，防止旧本机代码覆盖修改。
+HMCL 修改 RegionUtils.isIsChinaMainlandNetwork()Z，保留其他地区判断；缺少该入口的旧版原样保留。
+暂不处理带 JAR 条目签名的 HMCL 构建。原始签名不会在修改二进制后继续有效。

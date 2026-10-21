@@ -1,11 +1,11 @@
 __pycache__/
 *.pyc
 *.pcl-original.bak
+*.download-original.bak
+*.download-patch.json
+*.download-patch.lock
 *.tmp
 /PCL/
 /*.exe
-/source/Mono.Cecil.dll
-/source/previous/
-/source/release/
-/source/smoke-*
-/source/PCL/
+*.class
+/dist/

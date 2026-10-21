@@ -1,13 +1,11 @@
 @echo off
 chcp 65001 >nul
-setlocal
-title PCL 2.99.0.0 恢复原版
-echo PCL 2.99.0.0 恢复原版
-echo.
+setlocal DisableDelayedExpansion
+title 启动器下载恢复补丁 - 恢复原版
 if "%~1"=="" (
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Patch-PCL.ps1" -Restore <nul
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0LauncherPatch.ps1" -Restore
 ) else (
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Patch-PCL.ps1" -TargetExe "%~1" -Restore <nul
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0LauncherPatch.ps1" -TargetPath "%~1" -Restore
 )
 set "patchExit=%errorlevel%"
 echo.

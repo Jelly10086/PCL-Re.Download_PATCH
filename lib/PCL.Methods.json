@@ -1,0 +1,26 @@
+{
+    "Format":  1,
+    "DonorSha256":  "5e6d849d07f3fc6ed5a4cadcdd393a0bf6dc9d22bd131a31f508659b0f1046ee",
+    "Methods":  [
+                    {
+                        "Method":  "System.Void PCL.ModModpack::ModpackInstall()",
+                        "RestrictedFingerprint":  "6f8fc52d3d9ff1137e93eb89c23c721b75d0cb311277c62534baa0648145ecdb"
+                    },
+                    {
+                        "Method":  "PCL.ModLoader/LoaderCombo`1\u003cSystem.String\u003e PCL.ModModpack::ModpackInstall(System.String,System.String,System.String)",
+                        "RestrictedFingerprint":  "f1ffd7896800f9e5ebcfa450b3dc62d84bcdea72ee470f5a7aeb9d20aa314768"
+                    },
+                    {
+                        "Method":  "System.Void PCL.PageDownloadInstall::LoaderInit()",
+                        "RestrictedFingerprint":  "099f01c092ad76b500889937010a823ba4643f3098bf243aba8e04cd9f07a2f6"
+                    },
+                    {
+                        "Method":  "System.Void PCL.PageDownloadModify::LoadInstanceFinished(PCL.ModLoader/LoaderTask`2\u003cPCL.ModMinecraft/McInstance,System.Object\u003e)",
+                        "RestrictedFingerprint":  "d491ff467448d924825d9fc191023fe570d432a31fc29c450cb269b9966a20d3"
+                    },
+                    {
+                        "Method":  "System.Void PCL.PageDownloadResourceDetail::InitializeStackResourceVersions(System.Windows.Controls.StackPanel)",
+                        "RestrictedFingerprint":  "5abf416978a94d73f1846376ac892249c4651ab0554de8ff8750ba5c1b7916a2"
+                    }
+                ]
+}
