@@ -86,9 +86,9 @@ jobs:
         run: |
           set -euo pipefail
           gh run download "$GITHUB_RUN_ID" --name launcher-patch --dir dist
-          printf '%s\n' '支持 PCL、PCL-CE、HMCL。按方法和限制特征识别，不按版本号筛选。' '' '完整解压 ZIP，把启动器拖到「启动器下载恢复补丁.bat」上。' > notes.md
+          printf '%s\n' '支持 PCL、PCL-CE、HMCL。按方法和限制特征识别，不按版本号筛选。' '' '完整解压 ZIP，把启动器拖到「Launcher-Re.Download_PATCH.bat」上。' > notes.md
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --clobber
           else
-            gh release create "$GITHUB_REF_NAME" --verify-tag --title "启动器下载恢复补丁 $GITHUB_REF_NAME" --notes-file notes.md dist/*.zip dist/*.sha256
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "Launcher-Re.Download_PATCH $GITHUB_REF_NAME" --notes-file notes.md dist/*.zip dist/*.sha256
           fi

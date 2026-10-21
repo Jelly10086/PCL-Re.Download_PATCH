@@ -8,7 +8,7 @@ $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (!$OutputDirectory) {$OutputDirectory = Join-Path $root 'dist'}
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
-$files = @('LauncherPatch.ps1', '启动器下载恢复补丁.bat', 'Restore-Original.bat', 'README.md', 'LICENSE', 'NOTICE', 'UPSTREAM-LICENCE.txt',
+$files = @('LauncherPatch.ps1', 'Launcher-Re.Download_PATCH.bat', 'Restore-Original.bat', 'README.md', 'LICENSE', 'NOTICE', 'UPSTREAM-LICENCE.txt',
     'source/LauncherPatch.cs', 'source/RestoreDownload.cs', 'source/BUILD.txt',
     'lib/Mono.Cecil.dll', 'lib/Mono.Cecil.LICENSE.txt', 'lib/PCL.Methods.gz', 'lib/PCL.Methods.json')
 Add-Type -AssemblyName System.IO.Compression
@@ -19,7 +19,7 @@ foreach ($file in $files) {if (![IO.File]::Exists((Join-Path $root $file))) {thr
 if ($LASTEXITCODE -ne 0) {throw 'Entry point validation failed'}
 Add-Type -Path (Join-Path $root 'lib/Mono.Cecil.dll')
 Add-Type -Path @((Join-Path $root 'source/RestoreDownload.cs'), (Join-Path $root 'source/LauncherPatch.cs')) -ReferencedAssemblies @((Join-Path $root 'lib/Mono.Cecil.dll'), 'System.Core', 'System.IO.Compression')
-$archive = Join-Path $OutputDirectory "Launcher-Download-Restore-$Version.zip"
+$archive = Join-Path $OutputDirectory "Launcher-Re.Download_PATCH-$Version.zip"
 if ([IO.File]::Exists($archive)) {throw "Package already exists: $archive"}
 $temporary = Join-Path $OutputDirectory ('.package-' + [Guid]::NewGuid().ToString('N') + '.tmp')
 try {
