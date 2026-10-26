@@ -138,7 +138,7 @@ def upgrade(source, directory):
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("pcl", "ce", "hmcl", "unrestricted-hmcl", "pcl-version", "mismatched-pcl", "legacy-pcl"):
+    for name in ("pcl", "ce", "hmcl", "unrestricted-hmcl", "pcl-version", "mismatched-pcl", "legacy-pcl", "latest-pcl", "compatible-pcl", "partial-pcl", "navigation-pcl"):
         parser.add_argument("--" + name, type=Path, required=name in ("pcl", "ce", "hmcl"))
     parser.add_argument("--work-dir", type=Path, required=True)
     args = parser.parse_args()
@@ -146,7 +146,7 @@ def main():
         upgrade(args.legacy_pcl, args.work_dir / ('upgrade-' + uuid.uuid4().hex))
     work = args.work_dir.resolve() / ("patch-tests-" + uuid.uuid4().hex[:8])
     work.mkdir()
-    for name in ("pcl", "ce", "hmcl", "pcl_version"):
+    for name in ("pcl", "ce", "hmcl", "pcl_version", "latest_pcl", "compatible_pcl", "partial_pcl", "navigation_pcl"):
         sample = getattr(args, name)
         if sample:
             cycle(sample.resolve(), work / name)
@@ -175,7 +175,8 @@ def main():
         mismatch = work / "mismatch.exe"
         shutil.copy2(args.mismatched_pcl, mismatch)
         before = digest(mismatch)
-        run(mismatch, ok=False)
+        message = run(mismatch, ok=False)
+        assert '结构无法匹配' in message, message
         assert digest(mismatch) == before and not Path(str(mismatch) + ".download-original.bak").exists()
     if args.unrestricted_hmcl:
         old = work / "old-HMCL.exe"

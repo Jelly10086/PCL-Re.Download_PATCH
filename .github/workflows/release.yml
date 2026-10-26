@@ -40,8 +40,8 @@ jobs:
           $samples = Get-Content "$env:RUNNER_TEMP/samples/samples.json" -Raw | ConvertFrom-Json
           ./source/TestRestore.ps1 -WorkDirectory "$env:RUNNER_TEMP/samples"
           if ($LASTEXITCODE) {exit $LASTEXITCODE}
-          ./source/MakeTestVariants.ps1 -Pcl $samples.PCL -OutputDirectory "$env:RUNNER_TEMP/samples"
-          python source/TestPatch.py --pcl $samples.PCL --ce $samples.CE --hmcl $samples.HMCL --unrestricted-hmcl $samples.OldHMCL --pcl-version "$env:RUNNER_TEMP/samples/PCL-version.exe" --mismatched-pcl "$env:RUNNER_TEMP/samples/PCL-mismatch.exe" --legacy-pcl "$env:RUNNER_TEMP/samples/PCL-legacy.exe" --work-dir "$env:RUNNER_TEMP/samples"
+          ./source/MakeTestVariants.ps1 -Pcl $samples.PCL -LatestPcl $samples.LatestPCL -OutputDirectory "$env:RUNNER_TEMP/samples"
+          python source/TestPatch.py --pcl $samples.PCL --latest-pcl $samples.LatestPCL --ce $samples.CE --hmcl $samples.HMCL --unrestricted-hmcl $samples.OldHMCL --pcl-version "$env:RUNNER_TEMP/samples/PCL-version.exe" --compatible-pcl "$env:RUNNER_TEMP/samples/PCL-compatible.exe" --partial-pcl "$env:RUNNER_TEMP/samples/PCL-partial.exe" --navigation-pcl "$env:RUNNER_TEMP/samples/PCL-navigation.exe" --mismatched-pcl "$env:RUNNER_TEMP/samples/PCL-mismatch.exe" --legacy-pcl "$env:RUNNER_TEMP/samples/PCL-legacy.exe" --work-dir "$env:RUNNER_TEMP/samples"
           if ($LASTEXITCODE) {exit $LASTEXITCODE}
       - name: Verify restored PCL methods with CLR
         run: |
@@ -49,6 +49,15 @@ jobs:
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./LauncherPatch.ps1 -TargetPath $samples.PCL -OutputPath "$env:RUNNER_TEMP/samples/PATCH_PCL.exe"
           if ($LASTEXITCODE) {exit $LASTEXITCODE}
           ./source/VerifyPcl.ps1 -Original $samples.PCL -Patched "$env:RUNNER_TEMP/samples/PATCH_PCL.exe" -WorkDirectory "$env:RUNNER_TEMP/samples"
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./LauncherPatch.ps1 -TargetPath $samples.LatestPCL -OutputPath "$env:RUNNER_TEMP/samples/PATCH_PCL_LATEST.exe"
+          if ($LASTEXITCODE) {exit $LASTEXITCODE}
+          ./source/VerifyPcl.ps1 -Original $samples.LatestPCL -Patched "$env:RUNNER_TEMP/samples/PATCH_PCL_LATEST.exe" -WorkDirectory "$env:RUNNER_TEMP/samples"
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./LauncherPatch.ps1 -TargetPath "$env:RUNNER_TEMP/samples/PCL-partial.exe" -OutputPath "$env:RUNNER_TEMP/samples/PATCH_PCL_PARTIAL.exe"
+          if ($LASTEXITCODE) {exit $LASTEXITCODE}
+          ./source/VerifyPcl.ps1 -Original "$env:RUNNER_TEMP/samples/PCL-partial.exe" -Patched "$env:RUNNER_TEMP/samples/PATCH_PCL_PARTIAL.exe" -WorkDirectory "$env:RUNNER_TEMP/samples"
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./LauncherPatch.ps1 -TargetPath "$env:RUNNER_TEMP/samples/PCL-navigation.exe" -OutputPath "$env:RUNNER_TEMP/samples/PATCH_PCL_NAVIGATION.exe"
+          if ($LASTEXITCODE) {exit $LASTEXITCODE}
+          ./source/VerifyPcl.ps1 -Original "$env:RUNNER_TEMP/samples/PCL-navigation.exe" -Patched "$env:RUNNER_TEMP/samples/PATCH_PCL_NAVIGATION.exe" -WorkDirectory "$env:RUNNER_TEMP/samples"
       - name: Package
         env:
           REF_NAME: ${{ github.ref_name }}

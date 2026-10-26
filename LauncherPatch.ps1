@@ -65,7 +65,7 @@ function Load-Engine {
         Add-Type -Path @((Join-Path $PSScriptRoot 'source\RestoreDownload.cs'), (Join-Path $PSScriptRoot 'source\LauncherPatch.cs')) -ReferencedAssemblies @((Join-Path $lib 'Mono.Cecil.dll'), 'System.Core', 'System.IO.Compression')
     }
     $rules = Get-Content -LiteralPath (Join-Path $lib 'PCL.Methods.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($rules.Format -ne 1) {throw 'PCL 方法数据格式无效'}
+    if ($rules.Format -ne 2 -or $rules.FingerprintAlgorithm -ne 'restriction-il-v1') {throw 'PCL 方法数据格式无效，请完整解压新版补丁'}
     $file = [IO.File]::OpenRead((Join-Path $lib 'PCL.Methods.gz'))
     $gzip = [IO.Compression.GZipStream]::new($file, [IO.Compression.CompressionMode]::Decompress)
     $memory = [IO.MemoryStream]::new()
@@ -80,6 +80,7 @@ function Load-Engine {
     if ((Bytes-Hash $script:donor) -ne $rules.DonorSha256) {throw 'PCL 方法数据校验失败'}
     $script:methodNames = [string[]]@($rules.Methods | ForEach-Object {$_.Method})
     $script:methodHashes = [string[]]@($rules.Methods | ForEach-Object {$_.RestrictedFingerprint})
+    $script:methodMarkers = [bool[]]@($rules.Methods | ForEach-Object {$_.RequiresMarker})
 }
 
 $lock = $null
@@ -145,7 +146,7 @@ try {
     }
     if (!$isUpgrade -and $currentHash -and $currentHash -ne $originalHash) {throw '输出位置已有其他文件，未覆盖'}
     Load-Engine
-    $result = [LauncherPatchEngine]::Patch($original, $script:donor, $script:methodNames, $script:methodHashes)
+    $result = [LauncherPatchEngine]::Patch($original, $script:donor, $script:methodNames, $script:methodHashes, $script:methodMarkers)
     Write-Host "启动器：$($result.Launcher)"
     if ($result.Status -eq 'AlreadyPatched') {Write-Host '限制入口已关闭，无需重复修补'; exit 0}
     if ($result.Status -eq 'NoRestriction') {Write-Host '未发现可修补的下载限制，未修改文件'; exit 0}

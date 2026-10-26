@@ -10,22 +10,36 @@ Add-Type -Path @((Join-Path $PSScriptRoot 'RestoreDownload.cs'), (Join-Path $PSS
 $before = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Resolve-Path -LiteralPath $Original).Path)
 $after = [Mono.Cecil.AssemblyDefinition]::ReadAssembly((Resolve-Path -LiteralPath $Patched).Path)
 function Types($roots) {foreach ($t in $roots) {$t; Types $t.NestedTypes}}
-$expected = @((Get-Content -LiteralPath (Join-Path $root 'lib/PCL.Methods.json') -Raw -Encoding UTF8 | ConvertFrom-Json).Methods.Method)
+$rules = (Get-Content -LiteralPath (Join-Path $root 'lib/PCL.Methods.json') -Raw -Encoding UTF8 | ConvertFrom-Json).Methods
 $oldMethods = @{}
 foreach ($t in (Types $before.MainModule.Types)) {foreach ($m in $t.Methods) {$oldMethods[$m.FullName] = $m}}
+$expected = @($rules | Where-Object {$oldMethods.ContainsKey($_.Method) -and ((!$_.RequiresMarker -and [LauncherPatchEngine]::RestrictionFingerprint($oldMethods[$_.Method]) -eq $_.RestrictedFingerprint) -or [LauncherPatchEngine]::HasDownloadRestriction($oldMethods[$_.Method]))} | ForEach-Object {$_.Method})
+$expected += [LauncherPatchEngine]::NavigationRepairs($before.MainModule)
 $changed = @()
 $generated = @()
+$jit = @()
 foreach ($t in (Types $after.MainModule.Types)) {
     foreach ($m in $t.Methods) {
-        if ($oldMethods.ContainsKey($m.FullName) -and [LauncherPatchEngine]::Fingerprint($m) -ne [LauncherPatchEngine]::Fingerprint($oldMethods[$m.FullName])) {$changed += $m.FullName}
+        if ($oldMethods.ContainsKey($m.FullName) -and [LauncherPatchEngine]::Fingerprint($m) -ne [LauncherPatchEngine]::Fingerprint($oldMethods[$m.FullName])) {
+            $changed += $m.FullName
+            $jit += $m.MetadataToken.ToInt32()
+        }
         if (!$oldMethods.ContainsKey($m.FullName) -and $m.HasBody) {
             $code = @($m.Body.Instructions | Where-Object {$_.OpCode -ne [Mono.Cecil.Cil.OpCodes]::Nop})
             if ($code.Count -eq 2 -and $code[0].OpCode -eq [Mono.Cecil.Cil.OpCodes]::Ldnull -and $code[1].OpCode -eq [Mono.Cecil.Cil.OpCodes]::Throw) {throw "Stripped callback copied: $($m.FullName)"}
             $generated += [pscustomobject]@{Type=$t.FullName.Replace('/', '+'); Method=$m.Name}
+            $jit += $m.MetadataToken.ToInt32()
         }
     }
 }
 if (@(Compare-Object ($expected | Sort-Object) ($changed | Sort-Object)).Count -ne 0) {throw 'Unexpected original method changes'}
+foreach ($type in $after.MainModule.Types | Where-Object FullName -eq 'PCL.PageDownloadLeft') {
+    foreach ($method in $type.Methods | Where-Object {$_.IsConstructor -and !$_.IsStatic}) {
+        $old = $oldMethods[$method.FullName]
+        $sentinel = @($old.Body.Instructions | Where-Object {$_.OpCode -eq [Mono.Cecil.Cil.OpCodes]::Ldstr -and $_.Operand -eq 'Future application initializer'})
+        if ($sentinel.Count -and !($method.Body.Instructions | Where-Object {$_.OpCode -eq [Mono.Cecil.Cil.OpCodes]::Ldstr -and $_.Operand -eq 'Future application initializer'})) {throw 'Unrelated constructor initialization was removed'}
+    }
+}
 if ($before.MainModule.Resources.Count -ne $after.MainModule.Resources.Count) {throw 'Resource count changed'}
 foreach ($r in $before.MainModule.Resources) {
     $s = $after.MainModule.Resources | Where-Object Name -eq $r.Name
@@ -66,27 +80,10 @@ $resolve = [ResolveEventHandler]{
 [AppDomain]::CurrentDomain.add_AssemblyResolve($resolve)
 try {
     $assembly = [Reflection.Assembly]::LoadFrom($testExe)
-    $jobs = @{
-        'PCL.ModModpack' = @('ModpackInstall')
-        'PCL.PageDownloadInstall' = @('LoaderInit')
-        'PCL.PageDownloadModify' = @('LoadInstanceFinished')
-        'PCL.PageDownloadResourceDetail' = @('InitializeStackResourceVersions')
+    foreach ($token in $jit) {
+        $method = $assembly.ManifestModule.ResolveMethod($token)
+        [Runtime.CompilerServices.RuntimeHelpers]::PrepareMethod($method.MethodHandle)
     }
-    foreach ($typeName in $jobs.Keys) {
-        $type = $assembly.GetType($typeName,$true)
-        foreach ($method in $type.GetMethods([Reflection.BindingFlags]'Public,NonPublic,Static,Instance,DeclaredOnly') | Where-Object {$_.Name -in $jobs[$typeName]}) {
-            [Runtime.CompilerServices.RuntimeHelpers]::PrepareMethod($method.MethodHandle)
-            Write-Output "JIT OK - $method"
-        }
-    }
-    foreach ($entry in $generated) {
-        $type = $assembly.GetType($entry.Type,$true)
-        $flags = [Reflection.BindingFlags]'Public,NonPublic,Static,Instance,DeclaredOnly'
-        $members = if ($entry.Method -in @('.ctor', '.cctor')) {$type.GetConstructors($flags)} else {$type.GetMethods($flags)}
-        foreach ($method in $members | Where-Object {$_.Name -eq $entry.Method}) {
-            [Runtime.CompilerServices.RuntimeHelpers]::PrepareMethod($method.MethodHandle)
-        }
-    }
-    Write-Output "JIT OK - $($generated.Count) generated callbacks and constructors"
+    Write-Output "JIT OK - $($changed.Count) changed methods, $($generated.Count) generated callbacks and constructors"
 } finally {[AppDomain]::CurrentDomain.remove_AssemblyResolve($resolve)}
 Write-Output 'PASS - method scope, resources and CLR JIT'

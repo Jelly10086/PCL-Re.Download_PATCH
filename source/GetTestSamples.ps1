@@ -24,9 +24,10 @@ function Official([string]$Commit, [string]$Name, [string]$ExpectedHash) {
     return $path
 }
 $pcl = Official '6b9a50df911c9d68b69b24c979efba477fb14b67' 'PCL' '6b6e1260cb5a1d6a303855f1c60cab3d0bc1aebba7e40a964180188b271e7386'
+$latest = Official '93ede5d9e638c99fcec853a9ba1eecd91ceee7f5' 'PCL-latest' '0db34e19d9eeb6d496d20fabe786ec16bbd36ba6b0ccdc8d29cb7e909c114397'
 $donor = Official '5ef81e4' 'Donor' '5582952ded3b443503f66c23b810802bd20f1a3e847b54d9e09653a825859a36'
 $ce = Download 'https://github.com/PCL-Community/PCL-CE/releases/download/v2.15.1/PCL2_CE_Release_x64.exe' 'PCL-CE.exe' '168bd8369d5ed4e5478942677562913330ef1d30a5193870af910bd18198050c'
 $hmcl = Download 'https://github.com/HMCL-dev/HMCL/releases/download/v3.17.0.362/HMCL-3.17.0.362.exe' 'HMCL.exe' '08ba3e5435b51ad5d8d5266acb8cfac88736c4b5afb9c30f6b6455565d0f8652'
 $old = Download 'https://github.com/HMCL-dev/HMCL/releases/download/v3.17.0.361/HMCL-3.17.0.361.exe' 'HMCL-before.exe' '67308a1fb935f5520a43c42efcdde42ab392a6757ebb838eeffc85d54fb34a5f'
-[ordered]@{PCL=$pcl; Donor=$donor; CE=$ce; HMCL=$hmcl; OldHMCL=$old} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $WorkDirectory 'samples.json') -Encoding UTF8
+[ordered]@{PCL=$pcl; LatestPCL=$latest; Donor=$donor; CE=$ce; HMCL=$hmcl; OldHMCL=$old} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $WorkDirectory 'samples.json') -Encoding UTF8
 Write-Output 'Regression samples ready - launchers are not executed'

@@ -1,26 +1,32 @@
 {
-    "Format":  1,
+    "Format":  2,
+    "FingerprintAlgorithm":  "restriction-il-v1",
     "DonorSha256":  "5b48427107692f9fca6de3132dfe5a20628d061beebe12bc54421d465bb33517",
     "Methods":  [
                     {
                         "Method":  "System.Void PCL.ModModpack::ModpackInstall()",
-                        "RestrictedFingerprint":  "6f8fc52d3d9ff1137e93eb89c23c721b75d0cb311277c62534baa0648145ecdb"
+                        "RequiresMarker":  true,
+                        "RestrictedFingerprint":  "8b7adb6b797bf974c3c5a305725ac8b05de0f978a781e6792a9057f978ed0a9c"
                     },
                     {
                         "Method":  "PCL.ModLoader/LoaderCombo`1\u003cSystem.String\u003e PCL.ModModpack::ModpackInstall(System.String,System.String,System.String)",
-                        "RestrictedFingerprint":  "f1ffd7896800f9e5ebcfa450b3dc62d84bcdea72ee470f5a7aeb9d20aa314768"
+                        "RequiresMarker":  true,
+                        "RestrictedFingerprint":  "90071b3ea077884611d5b9a1ada0735b32328c32f165ab1b45ec1f5be4b0c08b"
                     },
                     {
                         "Method":  "System.Void PCL.PageDownloadInstall::LoaderInit()",
-                        "RestrictedFingerprint":  "099f01c092ad76b500889937010a823ba4643f3098bf243aba8e04cd9f07a2f6"
+                        "RequiresMarker":  true,
+                        "RestrictedFingerprint":  "dd445488a7cccdd1c5a0a200a364927dac35ec17e2c22880196819e9eaea965c"
                     },
                     {
                         "Method":  "System.Void PCL.PageDownloadModify::LoadInstanceFinished(PCL.ModLoader/LoaderTask`2\u003cPCL.ModMinecraft/McInstance,System.Object\u003e)",
-                        "RestrictedFingerprint":  "d491ff467448d924825d9fc191023fe570d432a31fc29c450cb269b9966a20d3"
+                        "RequiresMarker":  false,
+                        "RestrictedFingerprint":  "2e73545abac7cc0f5baf53dc5de2e7c7d24eea8dae398f9841692f38ceab808d"
                     },
                     {
                         "Method":  "System.Void PCL.PageDownloadResourceDetail::InitializeStackResourceVersions(System.Windows.Controls.StackPanel)",
-                        "RestrictedFingerprint":  "5abf416978a94d73f1846376ac892249c4651ab0554de8ff8750ba5c1b7916a2"
+                        "RequiresMarker":  false,
+                        "RestrictedFingerprint":  "075208ffd12e09037abd686af980ee50b4bb8c0835a6655d82f44fc77a35c353"
                     }
                 ]
 }

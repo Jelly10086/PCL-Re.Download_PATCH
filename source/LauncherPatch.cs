@@ -48,6 +48,7 @@ public sealed class LauncherPatchResult {
 }
 
 public static class LauncherPatchEngine {
+    static readonly Dictionary<string,OpCode> LongBranches=typeof(OpCodes).GetFields().Where(f=>f.FieldType==typeof(OpCode)).Select(f=>(OpCode)f.GetValue(null)).Where(o=>o.OperandType==OperandType.InlineBrTarget).ToDictionary(o=>o.Name);
     static readonly byte[] BundleSignature = {0x8b,0x12,0x02,0xb9,0x6a,0x61,0x20,0x38,0x72,0x7b,0x93,0x02,0x14,0xd7,0xa0,0x32,0x13,0xf5,0xb9,0xe6,0xef,0xae,0x33,0x18,0xee,0x3b,0x2d,0xce,0x24,0xb3,0x6a,0xae};
     public static string Hash(byte[] bytes) {
         using(var h=SHA256.Create()) return BitConverter.ToString(h.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
@@ -55,27 +56,60 @@ public static class LauncherPatchEngine {
     static IEnumerable<TypeDefinition> Types(IEnumerable<TypeDefinition> roots) {
         foreach(var t in roots) {yield return t;foreach(var n in Types(t.NestedTypes))yield return n;}
     }
-    public static string Fingerprint(MethodDefinition m) {
+    public static bool IsDownloadRestrictionText(string value) {
+        return value!=null&&(value=="关闭下载"||value.Contains("不再提供")&&value.Contains("下载")&&(value.Contains("MC")||value.Contains("Minecraft")));
+    }
+    public static bool HasDownloadRestriction(MethodDefinition method) {
+        return method.HasBody&&method.Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&IsDownloadRestrictionText((string)i.Operand));
+    }
+    public static bool IsLogSourcePath(Instruction instruction) {
+        // 只忽略日志调用的源文件参数，其他路径仍参与匹配
+        var value=instruction.Operand as string;
+        if(instruction.OpCode!=OpCodes.Ldstr||value==null||!Path.IsPathRooted(value)||!(value.EndsWith(".vb",StringComparison.OrdinalIgnoreCase)||value.EndsWith(".cs",StringComparison.OrdinalIgnoreCase)))return false;
+        var next=instruction.Next;while(next!=null&&next.OpCode==OpCodes.Nop)next=next.Next;
+        var method=next==null?null:next.Operand as MethodReference;
+        return next!=null&&(next.OpCode==OpCodes.Call||next.OpCode==OpCodes.Callvirt)&&method!=null&&method.DeclaringType.FullName=="MeloongCore.Logger"&&
+            (method.Name=="Trace"||method.Name=="Debug"||method.Name=="Info"||method.Name=="Warn"||method.Name=="Error"||method.Name=="Fatal")&&
+            method.Parameters.Count>1&&method.Parameters[method.Parameters.Count-1].ParameterType.FullName=="System.String";
+    }
+    public static string Fingerprint(MethodDefinition m) {return Fingerprint(m,false);}
+    public static string RestrictionFingerprint(MethodDefinition m) {return Fingerprint(m,true);}
+    static string Fingerprint(MethodDefinition m,bool normalize) {
         var s=new StringBuilder(m.FullName).Append('\n');
         if(!m.HasBody)return Hash(Encoding.UTF8.GetBytes(s.ToString()));
-        var instructions=m.Body.Instructions;
+        var instructions=m.Body.Instructions.Where(i=>!normalize||i.OpCode!=OpCodes.Nop).ToList();
+        Func<Instruction,int> position=item=> {
+            while(normalize&&item!=null&&item.OpCode==OpCodes.Nop)item=item.Next;
+            return instructions.IndexOf(item);
+        };
         foreach(var v in m.Body.Variables)s.Append("local:").Append(v.VariableType.FullName).Append('\n');
         s.Append("init:").Append(m.Body.InitLocals).Append('\n');
         foreach(var i in instructions) {
-            object o=i.Operand;
-            if(o is Instruction)o="jump:"+instructions.IndexOf((Instruction)o);
-            else if(o is Instruction[])o="switch:"+String.Join(",",((Instruction[])o).Select(x=>instructions.IndexOf(x)));
+            object o=i.Operand;string op=i.OpCode.Name;
+            if(normalize) {
+                if(op.EndsWith(".s",StringComparison.Ordinal))op=op.Substring(0,op.Length-2);
+                string code=i.OpCode.Code.ToString();int slot;
+                if(code.Length==7&&(code.StartsWith("Ldloc_",StringComparison.Ordinal)||code.StartsWith("Stloc_",StringComparison.Ordinal)||code.StartsWith("Ldarg_",StringComparison.Ordinal))&&Int32.TryParse(code.Substring(6),out slot)) {
+                    op=code.Substring(0,5).ToLowerInvariant();o=(op=="ldarg"?"arg:":"local:")+slot;
+                } else if(code.StartsWith("Ldc_I4_",StringComparison.Ordinal)&&code!="Ldc_I4_S") {
+                    op="ldc.i4";o=code=="Ldc_I4_M1"?-1:Int32.Parse(code.Substring(7),System.Globalization.CultureInfo.InvariantCulture);
+                }
+                if(o is string&&IsDownloadRestrictionText((string)o))o="{PCL_DOWNLOAD_RESTRICTION}";
+                else if(IsLogSourcePath(i))o="{LOG_SOURCE_PATH}";
+            }
+            if(o is Instruction)o="jump:"+position((Instruction)o);
+            else if(o is Instruction[])o="switch:"+String.Join(",",((Instruction[])o).Select(x=>position(x)));
             else if(o is MemberReference)o=((MemberReference)o).FullName;
             else if(o is VariableDefinition)o="local:"+((VariableDefinition)o).Index;
-            else if(o is ParameterDefinition)o="arg:"+((ParameterDefinition)o).Index;
+            else if(o is ParameterDefinition)o="arg:"+(((ParameterDefinition)o).Index+(normalize&&m.HasThis?1:0));
             else if(o is IFormattable)o=((IFormattable)o).ToString(null,System.Globalization.CultureInfo.InvariantCulture);
-            s.Append(i.OpCode.Name).Append(' ').Append(o).Append('\n');
+            s.Append(op).Append(' ').Append(o).Append('\n');
         }
         foreach(var e in m.Body.ExceptionHandlers) {
             s.Append(e.HandlerType).Append(':').Append(e.CatchType==null?"":e.CatchType.FullName)
-                .Append(':').Append(instructions.IndexOf(e.TryStart)).Append(':').Append(instructions.IndexOf(e.TryEnd))
-                .Append(':').Append(instructions.IndexOf(e.HandlerStart)).Append(':').Append(instructions.IndexOf(e.HandlerEnd))
-                .Append(':').Append(instructions.IndexOf(e.FilterStart)).Append('\n');
+                .Append(':').Append(position(e.TryStart)).Append(':').Append(position(e.TryEnd))
+                .Append(':').Append(position(e.HandlerStart)).Append(':').Append(position(e.HandlerEnd))
+                .Append(':').Append(position(e.FilterStart)).Append('\n');
         }
         return Hash(Encoding.UTF8.GetBytes(s.ToString()));
     }
@@ -135,7 +169,121 @@ public static class LauncherPatchEngine {
         if(method.Body.CodeSize<2)throw new InvalidDataException("方法体空间不足");
         bytes[code]=(byte)(value?0x17:0x16);bytes[code+1]=0x2a;
     }
-    static LauncherPatchResult Managed(byte[] original,byte[] donor,string[] names,string[] fingerprints,bool onlyCE) {
+    static int? Integer(Instruction instruction) {
+        if(instruction.OpCode==OpCodes.Ldc_I4||instruction.OpCode==OpCodes.Ldc_I4_S)return Convert.ToInt32(instruction.Operand,System.Globalization.CultureInfo.InvariantCulture);
+        string code=instruction.OpCode.Code.ToString();int number;
+        if(code=="Ldc_I4_M1")return -1;
+        return code.StartsWith("Ldc_I4_",StringComparison.Ordinal)&&Int32.TryParse(code.Substring(7),out number)?(int?)number:null;
+    }
+    static bool This(Instruction instruction) {
+        if(instruction.OpCode==OpCodes.Ldarg_0)return true;
+        var parameter=instruction.Operand as ParameterDefinition;
+        return (instruction.OpCode==OpCodes.Ldarg||instruction.OpCode==OpCodes.Ldarg_S)&&parameter!=null&&parameter.Index==-1;
+    }
+    static bool Call(Instruction instruction,string owner,string name) {
+        var method=instruction.Operand as MethodReference;
+        return (instruction.OpCode==OpCodes.Call||instruction.OpCode==OpCodes.Callvirt)&&method!=null&&method.DeclaringType.FullName==owner&&method.Name==name;
+    }
+    static void WidenBranches(MethodDefinition method) {
+        // 插入指令前展开短跳转，避免目标偏移超出范围
+        foreach(var instruction in method.Body.Instructions)
+            if(instruction.OpCode.OperandType==OperandType.ShortInlineBrTarget)instruction.OpCode=LongBranches[instruction.OpCode.Name.Substring(0,instruction.OpCode.Name.Length-2)];
+    }
+    static VariableDefinition Local(MethodDefinition method,Instruction instruction,bool store) {
+        string name=store?"stloc":"ldloc",code=instruction.OpCode.Name;int index;
+        if(code==name||code==name+".s")return instruction.Operand as VariableDefinition;
+        return code.StartsWith(name+".",StringComparison.Ordinal)&&Int32.TryParse(code.Substring(name.Length+1),out index)&&index<method.Body.Variables.Count?method.Body.Variables[index]:null;
+    }
+    static bool ModpackCallback(MethodReference method) {
+        if(method.DeclaringType.FullName=="PCL.ModModpack"&&method.Name=="ModpackInstall"&&method.Parameters.Count==0)return true;
+        if(!method.DeclaringType.FullName.StartsWith("PCL.PageSelectLeft/",StringComparison.Ordinal))return false;
+        var body=method.Resolve();
+        return body!=null&&body.HasBody&&body.Body.Instructions.Any(i=>Call(i,"PCL.ModModpack","ModpackInstall")&&((MethodReference)i.Operand).Parameters.Count==0);
+    }
+    static string[] FixImportButton(ModuleDefinition module,bool apply) {
+        var left=module.GetType("PCL.PageSelectLeft");if(left==null)return new string[0];
+        var changes=new List<string>();
+        foreach(var method in left.Methods.Where(m=>m.HasBody)) {
+            var code=method.Body.Instructions.Where(i=>i.OpCode!=OpCodes.Nop).ToArray();
+            for(int click=0;click<code.Length;click++) {
+                if(!Call(code[click],"PCL.MyListItem","add_Click"))continue;
+                int callback=-1;
+                for(int i=click-1;i>=Math.Max(0,click-20);i--) {
+                    if(code[i].OpCode==OpCodes.Ldftn&&ModpackCallback((MethodReference)code[i].Operand)) {callback=i;break;}
+                    if(Call(code[i],"PCL.MyListItem","add_Click"))break;
+                }
+                if(callback<0)continue;
+                VariableDefinition item=null;int load=-1,store=-1;
+                for(int i=callback-1;i>=Math.Max(0,callback-20);i--) {
+                    var local=Local(method,code[i],false);
+                    if(local!=null&&local.VariableType.FullName=="PCL.MyListItem") {item=local;load=i;break;}
+                }
+                if(item!=null)for(int i=load-1;i>=0;i--)if(Local(method,code[i],true)==item) {store=i;break;}
+                if(store<0)throw new InvalidDataException("无法定位整合包导入按钮，未修改文件："+method.FullName);
+                bool added=false;
+                for(int i=store+2;i<load;i++)if(Call(code[i],"System.Windows.Controls.UIElementCollection","Add")&&Local(method,code[i-1],false)==item)added=true;
+                if(added)continue;
+                var main=module.GetType("PCL.ModMain");
+                var global=main==null?null:main.Fields.SingleOrDefault(f=>f.Name=="FrmSelectLeft"&&f.FieldType.FullName==left.FullName);
+                var panel=left.Methods.SingleOrDefault(m=>m.Name=="get_PanList"&&m.Parameters.Count==0&&m.ReturnType.FullName=="System.Windows.Controls.StackPanel");
+                var children=code.Where(i=>Call(i,"System.Windows.Controls.Panel","get_Children")).Select(i=>(MethodReference)i.Operand).FirstOrDefault();
+                var add=code.Where(i=>Call(i,"System.Windows.Controls.UIElementCollection","Add")).Select(i=>(MethodReference)i.Operand).FirstOrDefault();
+                var entry=code[store+1];
+                if(global==null||!global.IsStatic||panel==null||panel.IsStatic||children==null||!children.HasThis||children.Parameters.Count!=0||children.ReturnType.FullName!="System.Windows.Controls.UIElementCollection"||
+                    add==null||!add.HasThis||add.Parameters.Count!=1||add.Parameters[0].ParameterType.FullName!="System.Windows.UIElement"||add.ReturnType.FullName!="System.Int32"||
+                    code.Any(i=>i.Operand==entry||i.Operand is Instruction[]&&((Instruction[])i.Operand).Contains(entry))||
+                    method.Body.ExceptionHandlers.Any(e=>e.TryStart==entry||e.TryEnd==entry||e.HandlerStart==entry||e.HandlerEnd==entry||e.FilterStart==entry))
+                    throw new InvalidDataException("整合包导入入口结构无法匹配，未修改文件："+method.FullName);
+                if(apply) {
+                    WidenBranches(method);
+                    var il=method.Body.GetILProcessor();
+                    foreach(var instruction in new[] {Instruction.Create(OpCodes.Ldsfld,global),Instruction.Create(OpCodes.Callvirt,panel),Instruction.Create(OpCodes.Callvirt,children),
+                        Instruction.Create(OpCodes.Ldloc,item),Instruction.Create(OpCodes.Callvirt,add),Instruction.Create(OpCodes.Pop)})il.InsertBefore(entry,instruction);
+                }
+                changes.Add(method.FullName);
+            }
+        }
+        return changes.Distinct().ToArray();
+    }
+    public static string[] NavigationRepairs(ModuleDefinition module) {return FixNavigation(module,false);}
+    static string[] FixNavigation(ModuleDefinition module,bool apply) {
+        var left=module.GetType("PCL.PageDownloadLeft");if(left==null)return new string[0];
+        var changes=new List<string>();
+        foreach(var constructor in left.Methods.Where(m=>m.IsConstructor&&!m.IsStatic&&m.Parameters.Count==0&&m.HasBody)) {
+            var code=constructor.Body.Instructions.Where(i=>i.OpCode!=OpCodes.Nop).ToArray();
+            var install=new List<Instruction>();var resource=new List<Instruction>();
+            for(int i=1;i+2<code.Length;i++) {
+                if(!This(code[i-1])||Integer(code[i+1])!=2||!Call(code[i+2],"System.Windows.UIElement","set_Visibility"))continue;
+                if(Call(code[i],left.FullName,"get_ItemInstall"))install.Add(code[i+1]);
+                if(Call(code[i],left.FullName,"get_LabResource"))resource.Add(code[i+1]);
+            }
+            if(install.Count==0&&resource.Count==0)continue;
+            var pageId=left.Fields.SingleOrDefault(f=>f.Name=="PageID");
+            var pageType=pageId==null?null:Types(module.Types).SingleOrDefault(t=>t.FullName==pageId.FieldType.FullName);
+            var installId=pageType==null?null:pageType.Fields.SingleOrDefault(f=>f.Name=="DownloadInstall"&&f.HasConstant);
+            var modId=pageType==null?null:pageType.Fields.SingleOrDefault(f=>f.Name=="DownloadMod"&&f.HasConstant);
+            var page=new List<Instruction>();var select=new List<Instruction>();
+            for(int i=2;i<code.Length;i++) {
+                var field=code[i].Operand as FieldReference;
+                if(pageId!=null&&modId!=null&&This(code[i-2])&&code[i].OpCode==OpCodes.Stfld&&field!=null&&field.FullName==pageId.FullName&&Integer(code[i-1])==Convert.ToInt32(modId.Constant))page.Add(code[i-1]);
+                if(This(code[i-2])&&Call(code[i-1],left.FullName,"get_ItemMod")&&Integer(code[i])==1&&i+1<code.Length&&Call(code[i+1],"PCL.MyListItem","set_Checked"))select.Add(code[i-1]);
+            }
+            var getter=left.Methods.SingleOrDefault(m=>m.Name=="get_ItemInstall"&&!m.IsStatic&&m.Parameters.Count==0&&m.ReturnType.FullName=="PCL.MyListItem");
+            if(install.Count!=1||resource.Count!=1||page.Count!=1||select.Count!=1||installId==null||getter==null)
+                throw new InvalidDataException("发现隐藏原版下载入口的代码，但结构无法匹配，未修改文件："+constructor.FullName);
+            if(apply) {
+                WidenBranches(constructor);
+                install[0].OpCode=OpCodes.Ldc_I4_0;install[0].Operand=null;
+                resource[0].OpCode=OpCodes.Ldc_I4_0;resource[0].Operand=null;
+                page[0].OpCode=OpCodes.Ldc_I4;page[0].Operand=Convert.ToInt32(installId.Constant);
+                select[0].Operand=getter;
+            }
+            changes.Add(constructor.FullName);
+        }
+        changes.AddRange(FixImportButton(module,apply));
+        return changes.ToArray();
+    }
+    static LauncherPatchResult Managed(byte[] original,byte[] donor,string[] names,string[] fingerprints,bool[] requiresMarker,bool onlyCE) {
         using(var module=ModuleDefinition.ReadModule(new MemoryStream(original))) {
             var policy=module.GetType("PCL.RestrictedFeaturePolicy");
             if(policy!=null) {
@@ -162,22 +310,32 @@ public static class LauncherPatchEngine {
             if(onlyCE)return null;
             if(module.GetType("PCL.ModModpack")==null||module.GetType("PCL.PageDownloadInstall")==null)return null;
             var methods=Types(module.Types).SelectMany(t=>t.Methods).ToDictionary(m=>m.FullName);
-            bool restricted=methods.Values.Any(m=>names!=null&&names.Contains(m.FullName)&&m.HasBody&&m.Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&
-                ((string)i.Operand=="关闭下载"||((string)i.Operand).Contains("不再提供 MC 下载功能"))));
-            if(!restricted)return Result("PCL","NoRestriction",original,new string[0]);
-            if(donor==null||names==null||fingerprints==null||names.Length!=fingerprints.Length)throw new InvalidDataException("缺少官方 PCL 方法回填数据");
+            if(donor==null||names==null||fingerprints==null||requiresMarker==null||names.Length!=fingerprints.Length||names.Length!=requiresMarker.Length)throw new InvalidDataException("缺少官方 PCL 方法回填数据");
+            var owners=new HashSet<string>(names.Select(n=>n.Substring(0,n.IndexOf("::",StringComparison.Ordinal))).Select(n=>n.Substring(n.LastIndexOf(' ')+1)));
+            var unknown=methods.Values.Where(m=>owners.Contains(m.DeclaringType.FullName)&&HasDownloadRestriction(m)&&!names.Contains(m.FullName)).ToArray();
+            if(unknown.Length>0)throw new InvalidDataException("发现新的下载限制方法，未修改文件：\n"+String.Join("\n",unknown.Select(m=>m.FullName)));
+            bool restricted=methods.Values.Any(m=>names.Contains(m.FullName)&&HasDownloadRestriction(m));
+            bool needsMethods=restricted||names.Where((name,index)=>!requiresMarker[index]).Any(name=>methods.ContainsKey(name)&&RestrictionFingerprint(methods[name])==fingerprints[Array.IndexOf(names,name)]);
+            var navigation=NavigationRepairs(module);
+            if(!needsMethods&&navigation.Length==0)
+                return Result("PCL","NoRestriction",original,new string[0]);
+            var selected=new List<MethodDefinition>();
             var mismatches=new List<string>();
-            for(int i=0;i<names.Length;i++) {
+            for(int i=0;needsMethods&&i<names.Length;i++) {
                 MethodDefinition m;
-                if(!methods.TryGetValue(names[i],out m)||Fingerprint(m)!=fingerprints[i])mismatches.Add(names[i]);
+                if(!methods.TryGetValue(names[i],out m)) {if(!requiresMarker[i])mismatches.Add(names[i]);continue;}
+                if(requiresMarker[i]&&!HasDownloadRestriction(m))continue;
+                if(RestrictionFingerprint(m)!=fingerprints[i])mismatches.Add(m.FullName);
+                else selected.Add(m);
             }
             if(mismatches.Count>0)throw new InvalidDataException("已发现官方 PCL 下载限制，但这些方法的结构无法匹配，未修改文件：\n"+String.Join("\n",mismatches));
-            byte[] restored=RestoreDownload.Run(donor,original,names);
+            var restoredNames=selected.Select(m=>m.FullName).ToArray();
+            byte[] restored=RestoreDownload.Run(donor,original,restoredNames,m=>FixNavigation(m,true));
             using(var check=ModuleDefinition.ReadModule(new MemoryStream(restored))) {
-                if(Types(check.Types).SelectMany(t=>t.Methods).Any(m=>names.Contains(m.FullName)&&m.HasBody&&m.Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr&&
-                    ((string)i.Operand=="关闭下载"||((string)i.Operand).Contains("不再提供 MC 下载功能")))))throw new InvalidDataException("回填后仍存在已知下载限制");
+                if(Types(check.Types).SelectMany(t=>t.Methods).Any(m=>names.Contains(m.FullName)&&HasDownloadRestriction(m)))throw new InvalidDataException("回填后仍存在已知下载限制");
+                if(NavigationRepairs(check).Length>0)throw new InvalidDataException("修补后仍存在隐藏原版下载入口的代码");
             }
-            return Result("PCL","Patched",restored,names);
+            return Result("PCL","Patched",restored,restoredNames.Concat(navigation));
         }
     }
     sealed class BundleEntry {
@@ -214,7 +372,7 @@ public static class LauncherPatchEngine {
                         if(read!=bytes.Length||compressed.ReadByte()!=-1)throw new InvalidDataException("单文件条目解压长度不符");
                     }
                 } else Buffer.BlockCopy(original,checked((int)e.Offset),bytes,0,bytes.Length);
-                var result=Managed(bytes,null,null,null,true);if(result==null)continue;found=true;
+                var result=Managed(bytes,null,null,null,null,true);if(result==null)continue;found=true;
                 if(result.Status!="Patched")continue;
                 changes.AddRange(result.Changes.Select(x=>e.Name+" :: "+x));
                 if(e.Compressed==0) {append.Position=e.Offset;append.Write(result.Bytes,0,result.Bytes.Length);}
@@ -323,12 +481,12 @@ public static class LauncherPatchEngine {
         var verify=Jar(output);if(verify==null||verify.Status!="AlreadyPatched")throw new InvalidDataException("HMCL 回读验证失败");
         return Result("HMCL","Patched",output,changes);
     }
-    public static LauncherPatchResult Patch(byte[] original,byte[] donor,string[] names,string[] fingerprints) {
+    public static LauncherPatchResult Patch(byte[] original,byte[] donor,string[] names,string[] fingerprints,bool[] requiresMarker) {
         if(original==null||original.Length<64)throw new InvalidDataException("文件过小，无法识别启动器");
         var jar=Jar(original);if(jar!=null)return jar;
         int marker=Find(original,BundleSignature);if(marker>=0)return Bundle(original,marker);
         LauncherPatchResult result;
-        try {result=Managed(original,donor,names,fingerprints,false);}
+        try {result=Managed(original,donor,names,fingerprints,requiresMarker,false);}
         catch(BadImageFormatException) {throw new InvalidDataException("无法识别启动器，支持 PCL、PCL-CE 和 HMCL");}
         if(result==null)throw new InvalidDataException("未找到支持的启动器或下载限制入口");
         return result;

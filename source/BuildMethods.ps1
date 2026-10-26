@@ -26,7 +26,7 @@ try {
     $rules = @()
     foreach ($typeName in ($jobs.Keys | Sort-Object)) {
         foreach ($m in $restricted.MainModule.GetType($typeName).Methods | Where-Object {$_.Name -in $jobs[$typeName]}) {
-            $rules += [ordered]@{Method=$m.FullName; RestrictedFingerprint=[LauncherPatchEngine]::Fingerprint($m)}
+            $rules += [ordered]@{Method=$m.FullName; RequiresMarker=[LauncherPatchEngine]::HasDownloadRestriction($m); RestrictedFingerprint=[LauncherPatchEngine]::RestrictionFingerprint($m)}
         }
     }
     $selected = @($rules | ForEach-Object {$_.Method})
@@ -45,7 +45,7 @@ try {
     $file = [IO.File]::Create((Join-Path $lib 'PCL.Methods.gz'))
     $gzip = [IO.Compression.GZipStream]::new($file, [IO.Compression.CompressionLevel]::Optimal)
     try {$gzip.Write($bytes, 0, $bytes.Length)} finally {$gzip.Dispose(); $file.Dispose()}
-    $manifest = [ordered]@{Format=1; DonorSha256=[LauncherPatchEngine]::Hash($bytes); Methods=$rules}
+    $manifest = [ordered]@{Format=2; FingerprintAlgorithm='restriction-il-v1'; DonorSha256=[LauncherPatchEngine]::Hash($bytes); Methods=$rules}
     [IO.File]::WriteAllText((Join-Path $lib 'PCL.Methods.json'), ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
     Write-Output 'Generated PCL method data - no launcher version filter'
 } finally {$donor.Dispose(); $restricted.Dispose(); $resolver.Dispose()}

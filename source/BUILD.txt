@@ -7,6 +7,9 @@ source/LauncherPatch.cs：PCL-CE 的托管 PE/单文件容器处理、HMCL 的 Z
 source/RestoreDownload.cs：官方 PCL 的方法回填
 lib/Mono.Cecil.dll：0.11.6，NuGet 包中的 lib/net40 版本
 lib/PCL.Methods.gz、PCL.Methods.json：PCL 方法数据及逐方法特征，不是版本白名单
+方法数据格式为2，restriction-il-v1忽略下载限制文案、日志调用的编译源文件路径、NOP及等价的长短跳转、参数、局部变量和整数指令编码，保留其他指令、常量、调用及异常处理边界的校验。
+带提示标记的方法已无对应限制时保留原实现；不含提示的裁剪方法仍核对结构，避免漏掉版本修改和资源下载入口。
+2.99.0.1增加的入口隐藏采用就地修补：恢复原版页面、默认选中状态和整合包按钮的Children.Add，保留其他初始化逻辑。插入代码前展开短跳转，无法确认分支或异常处理边界时拒绝修改。
 
 Mono.Cecil 原包
 https://api.nuget.org/v3-flatcontainer/mono.cecil/0.11.6/mono.cecil.0.11.6.nupkg
@@ -28,6 +31,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File LauncherPatch.ps1 -Targe
 python source/TestPatch.py --pcl restricted.exe --ce PCL-CE.exe --hmcl HMCL.exe --unrestricted-hmcl old-HMCL.exe --work-dir D:/Data/Game/RegionTest
 测试只复制指定样本，验证试运行、修补、幂等、原样恢复、损坏备份及外部修改保护，并验证 JAR 和压缩单文件容器。
 --pcl-version 可额外提供仅修改程序集版本的 PCL 样本，验证无版本白名单。
+--latest-pcl验证官方2.99.0.1；--compatible-pcl验证文案和等价IL变化，--partial-pcl验证已恢复的方法不被覆盖。新增业务调用的样本必须拒绝，不能以通用兼容为由回填旧逻辑。
+--navigation-pcl验证下载方法已恢复时只修入口，保留模拟的新增初始化代码。VerifyPcl校验实际变更的方法、资源不变，并JIT所有变更方法和新增回调。
 source/TestRestore.ps1 验证回调实际执行、闭包初始化和同名冲突，并验证裁剪依赖被拒绝。
 source/MakeTestVariants.ps1 生成版本变化、方法结构变化和旧补丁空回调样本；--legacy-pcl 验证保留原版备份的升级修补。
 

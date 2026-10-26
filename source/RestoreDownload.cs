@@ -182,6 +182,9 @@ public sealed class RestoreDownload {
         });
     }
     public static byte[] Run(byte[] donor,byte[] original,string[] selected) {
+        return Run(donor,original,selected,null);
+    }
+    public static byte[] Run(byte[] donor,byte[] original,string[] selected,Action<ModuleDefinition> edit) {
         using(var resolver=new LauncherAssemblyResolver(original)) {
             var parameters=new ReaderParameters {AssemblyResolver=resolver};
             using(var a=AssemblyDefinition.ReadAssembly(new System.IO.MemoryStream(donor),parameters))using(var b=AssemblyDefinition.ReadAssembly(new System.IO.MemoryStream(original),parameters)) {
@@ -195,6 +198,7 @@ public sealed class RestoreDownload {
                     p.Copy(m,dest);p.changed.Add("Restored "+m.FullName);
                 }
                 if(b.MainModule.AssemblyReferences.Any(x=>x.Name==a.Name.Name))throw new Exception("Accidental self reference");
+                if(edit!=null)edit(b.MainModule);
                 using(var output=new System.IO.MemoryStream()) {b.Write(output);return output.ToArray();}
             }
         }
